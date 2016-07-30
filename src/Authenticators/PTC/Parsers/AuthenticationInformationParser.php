@@ -4,6 +4,7 @@ namespace NicklasW\PkmGoApi\Authenticators\PTC\Parsers;
 
 use NicklasW\PkmGoApi\Authenticators\Exceptions\ResponseException;
 use NicklasW\PkmGoApi\Authenticators\PTC\Parsers\Results\AuthenticationInformationResult;
+use NicklasW\PkmGoApi\Facades\Log;
 use PHPHtmlParser\Dom;
 use Psr\Http\Message\ResponseInterface;
 
@@ -29,8 +30,13 @@ class AuthenticationInformationParser extends Parser {
         // Validate the retrieved response
         $this->validateResponse($response);
 
+        // Retrieve the content
+        $content = (string)$response->getBody();
+
         // Decode the content
-        $content = $this->content($response->getBody()->getContents());
+        $content = $this->content($content);
+
+        Log::debug(sprintf('[#%s] Retrieved content: \'%s\' ', __CLASS__, var_export($content, true)));
 
         return new AuthenticationInformationResult(array('lt' => $content->lt, 'execution' => $content->execution));
     }

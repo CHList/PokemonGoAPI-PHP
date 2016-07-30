@@ -5,6 +5,7 @@ namespace NicklasW\PkmGoApi\Handlers;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Request as HttpRequest;
+use NicklasW\PkmGoApi\Facades\Log;
 use NicklasW\PkmGoApi\Handlers\RequestHandler\Exceptions\AuthenticationException;
 use NicklasW\PkmGoApi\Handlers\RequestHandler\Exceptions\ResponseException;
 use NicklasW\PkmGoApi\Requests\Request;
@@ -26,11 +27,6 @@ class RequestHandler {
     protected static $REQUEST_STATUS_CODE = 2;
 
     /**
-     * @var int The request id
-     */
-    protected static $REQUEST_ID = 8145806132888207460;
-
-    /**
      * @var string Authentication error response status
      */
     protected static $RESPONSE_STATUS_AUTHENTICATION_ERROR = 102;
@@ -41,9 +37,14 @@ class RequestHandler {
     protected static $RESPONSE_STATUS_HANDSHAKE = 53;
 
     /**
+     * @var string The handskake response status
+     */
+    protected static $RESPONSE_STATUS_THROTTLED = 52;
+
+    /**
      * @var string The unknown response statuses
      */
-    protected static $RESPONSE_STATUS_UNKNOWN = array(52, 100);
+    protected static $RESPONSE_STATUS_UNKNOWN = array(100);
 
     /**
      * @var Request[] The list of requests to be handled
@@ -61,6 +62,11 @@ class RequestHandler {
     protected $client;
 
     /**
+     * @var integer The request id
+     */
+    protected $requestId;
+
+    /**
      * RequestHandler constructor.
      *
      * @param RequestEnvelope_AuthInfo $authenticationInformation
@@ -69,15 +75,20 @@ class RequestHandler {
     {
         $this->session = new Session();
         $this->session->setAuthenticationInformation($authenticationInformation);
+
+        // Set the initial request id
+        $this->requestId = rand(100000000, 999999999);
     }
 
     /**
      * Handles a request.
      *
      * @param Request $request
+     * @param integer $retry
+     * @throws AuthenticationException
      * @throws Exception
      */
-    public function handle($request)
+    public function handle($request, $retry = 0)
     {
         // Build and populate request envelope
         $requestEnvelope = $this->build($request);
@@ -87,6 +98,9 @@ class RequestHandler {
 
         // Check authentication status
         if ($this->hasAuthenticationError($response)) {
+            Log::debug(sprintf('Authentication error. Status code: \'%s\' Error message: \'%s\'',
+                $response->getStatusCode(), print_r($response->getError(), true)));
+
             throw new AuthenticationException('Invalid authentication token provided');
         }
 
@@ -95,9 +109,29 @@ class RequestHandler {
 
         // Check if the request corresponds to a handshake
         if ($this->isHandshake($response)) {
+            Log::debug(sprintf('Handshake response. Status code: \'%s\'',
+                $response->getStatusCode(), print_r($response->getError(), true)));
+
             $this->handle($request);
 
             return;
+        }
+
+        // Check if the request corresponds to a throttled response
+        if ($this->isThrottledResponse($response)) {
+            // Check the number of retries, only retry twice
+            if ($retry < 2) {
+                Log::debug(sprintf('Throttle response. Retrying. Number of retries: \'%s\'', $retry));
+
+                // Only one or two request per second is allowed, sleep one second before retrying
+                sleep(1);
+
+                $this->handle($request, ++$retry);
+
+                return;
+            }
+
+            throw new Exception(sprintf('The server is to busy. Please try again later', $response->getStatusCode()));
         }
 
         // Check if the request corresponds to a unknown response
@@ -125,8 +159,14 @@ class RequestHandler {
         // Prepare the request envelope
         $requestEnvelope = new RequestEnvelope();
         $requestEnvelope->setStatusCode(self::$REQUEST_STATUS_CODE);
-        $requestEnvelope->setRequestId(self::$REQUEST_ID);
+
+        // Sets the request id
+        $requestEnvelope->setRequestId($this->requestId());
         $requestEnvelope->setUnknown12(989);
+
+        // Sets the location
+        $requestEnvelope->setLatitude(40.7143528);
+        $requestEnvelope->setLongitude(-74.0059731);
 
         // Add request
         $requestEnvelope->addAllRequests(array($networkRequest));
@@ -152,6 +192,8 @@ class RequestHandler {
 
         // Prepare the authentication
         $this->prepareAuthentication($requestEnvelope);
+
+        Log::debug(sprintf('The request envelope. Content: \'%s\'', print_r($requestEnvelope, true)));
 
         // Prepare the HTTP request
         $request = new HttpRequest('POST', $url, array(), $requestEnvelope->toProtobuf());
@@ -236,6 +278,17 @@ class RequestHandler {
      * @param ResponseEnvelope $responseEnvelop
      * @return boolean
      */
+    protected function isThrottledResponse($responseEnvelop)
+    {
+        return $responseEnvelop->getStatusCode() === self::$RESPONSE_STATUS_THROTTLED;
+    }
+
+    /**
+     * Returns true if the request status code is unknown, false otherwise.
+     *
+     * @param ResponseEnvelope $responseEnvelop
+     * @return boolean
+     */
     protected function isUnknownResponse($responseEnvelop)
     {
         return in_array($responseEnvelop->getStatusCode(), self::$RESPONSE_STATUS_UNKNOWN);
@@ -252,7 +305,17 @@ class RequestHandler {
         // Retrieve the initial integer from the status code
         $responseCode = substr($response->getStatusCode(), 0, 1);
 
-        return $responseCode === 5;
+        return $responseCode == 5;
+    }
+
+    /**
+     * Returns the request id.
+     *
+     * @return integer
+     */
+    protected function requestId()
+    {
+        return ++$this->requestId;
     }
 
     /**
@@ -269,7 +332,7 @@ class RequestHandler {
         }
 
         throw new ResponseException(
-            sprintf('Retrieved a invalid response. Response: \'%s\'', $response->getBody()->getContents()));
+            sprintf('Retrieved a invalid response. Response code: \'%s\'', $response->getStatusCode()));
     }
 
     /**
@@ -300,7 +363,7 @@ class RequestHandler {
         if ($this->client == null) {
             // Initialize the HTTP client
             $this->client = new Client(
-                array('http_errors' => false, 'verify' => Config::get('config.ssl_verification')));
+                array('headers' => array('User-Agent' => 'Niantic App'), 'http_errors' => false, 'verify' => Config::get('config.ssl_verification')));
         }
 
         return $this->client;

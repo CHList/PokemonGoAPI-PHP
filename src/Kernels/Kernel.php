@@ -7,6 +7,7 @@ use DI\ContainerBuilder;
 use Dotenv\Dotenv;
 use Exception;
 use Interop\Container\ContainerInterface;
+use Monolog\Formatter\LineFormatter;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
@@ -32,10 +33,19 @@ class Kernel implements ContainerInterface {
     protected $serviceProviders;
 
     /**
-     * Kernel constructor.
+     * @var
      */
-    public function __construct()
+    protected $environmentFilePath;
+
+    /**
+     * Kernel constructor.
+     *
+     * @param string|null $environmentFilePath
+     */
+    public function __construct($environmentFilePath = null)
     {
+        $this->environmentFilePath = $environmentFilePath;
+
         // Initialize the container
         $this->initializeContainer();
 
@@ -92,11 +102,11 @@ class Kernel implements ContainerInterface {
         // Initialize the proxy manager
         $this->initializeProxyManager();
 
-        // Initialize the service providers
-        $this->initializeServiceProviders();
-
         // Initialize the logger
         $this->initializeLogger();
+
+        // Initialize the service providers
+        $this->initializeServiceProviders();
     }
 
     /**
@@ -104,11 +114,17 @@ class Kernel implements ContainerInterface {
      */
     protected function loadEnvironmentVariables()
     {
+        // Check if the environment file path is defined
+        if ($this->environmentFilePath === null) {
+            return;
+        }
+
         // Initialize the environment instance
-        $dotenv = new Dotenv($this->basePath());
+        $dotenv = new Dotenv($this->environmentFilePath);
 
         // Load environment file in given directory.
         $dotenv->load();
+
     }
 
     /**
@@ -117,10 +133,10 @@ class Kernel implements ContainerInterface {
     protected function addFacades()
     {
         // Add the Log facade
-        $this->proxyManager->addProxy('Log', 'NicklasW\PkmGoApi\Facades\LogFacade');
+        $this->proxyManager->addProxy('Log', 'NicklasW\PkmGoApi\Facades\Log');
 
         // Add the Config facade
-        $this->proxyManager->addProxy('Config', 'NicklasW\PkmGoApi\Facades\ConfigFacade');
+        $this->proxyManager->addProxy('Config', 'NicklasW\PkmGoApi\Facades\Config');
     }
 
     /**
@@ -219,7 +235,13 @@ class Kernel implements ContainerInterface {
         if ($filePath == null) {
             $logger->pushHandler(new NullHandler(getenv('LOG_LEVEL')));
         } else {
-            $logger->pushHandler(new StreamHandler($filePath, getenv('LOG_LEVEL')));
+            // Create the stream handler
+            $handler = new StreamHandler($filePath, getenv('LOG_LEVEL'));
+
+            // Create the formatter
+            $handler->setFormatter(new LineFormatter(null, null, true, true));
+
+            $logger->pushHandler($handler);
         }
 
         // Add the logger instance to the container

@@ -21,13 +21,15 @@ class TokenParser extends Parser {
     /**
      * The method which parses the content.
      *
-     * @param ResponseInterface $content
+     * @param ResponseInterface $response
      * @return TokenResult
      */
-    public function parse($content)
+    public function parse($response)
     {
-        // Retrieve the content from the response content
-        $content = $content->getBody()->getContents();
+        // Retrieve the content
+        $content = (string)$response->getBody();
+
+        Log::debug(sprintf('[#%s] Retrieved content: \'%s\'', __CLASS__, $content));
 
         return new TokenResult(array('token' => $this->parseToken($content)));
     }

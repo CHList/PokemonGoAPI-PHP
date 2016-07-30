@@ -2,6 +2,7 @@
 
 namespace NicklasW\PkmGoApi\Kernels;
 
+use DI\NotFoundException;
 use NicklasW\PkmGoApi\Api\PokemonGoApi;
 use NicklasW\PkmGoApi\Providers\PokemonGoApiServiceProvider;
 use NicklasW\PkmGoApi\Providers\RequestHandlerServiceProvider;
@@ -26,17 +27,18 @@ class ApplicationKernel extends Kernel {
     /**
      * Kernel constructor.
      *
-     * @param string  $user
-     * @param string  $password
-     * @param integer $authenticationType
+     * @param string      $user
+     * @param string      $password
+     * @param integer     $authenticationType
+     * @param string|null $environmentFilePath
      */
-    public function __construct($user, $password, $authenticationType)
+    public function __construct($user, $password, $authenticationType, $environmentFilePath = null)
     {
         $this->user = $user;
         $this->password = $password;
         $this->authenticationType = $authenticationType;
 
-        parent::__construct();
+        parent::__construct($environmentFilePath);
     }
 
     /**
@@ -57,7 +59,7 @@ class ApplicationKernel extends Kernel {
      * Returns the pokemon go api.
      *
      * @return PokemonGoApi
-     * @throws \DI\NotFoundException
+     * @throws NotFoundException
      */
     public function getPokemonGoApi()
     {

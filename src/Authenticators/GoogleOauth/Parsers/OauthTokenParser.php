@@ -4,6 +4,7 @@ namespace NicklasW\PkmGoApi\Authenticators\GoogleOauth\Parsers;
 
 use NicklasW\PkmGoApi\Authenticators\GoogleOauth\Parsers\Results\AuthenticationInformationResult;
 use NicklasW\PkmGoApi\Authenticators\GoogleOauth\Parsers\Results\AuthenticationTokenResult;
+use NicklasW\PkmGoApi\Facades\Log;
 use PHPHtmlParser\Dom;
 use Psr\Http\Message\ResponseInterface;
 
@@ -29,7 +30,9 @@ class OauthTokenParser extends Parser {
         $this->validateResponse($response);
 
         // Retrieve the content
-        $content = $response->getBody()->getContents();
+        $content = (string)$response->getBody();
+
+        Log::debug(sprintf('[#%s] Retrieved response. Content: \'%s\'', __CLASS__, $content));
 
         return new AuthenticationTokenResult(array('auth' => $this->parseAuthId($content)));
     }
